@@ -1,13 +1,28 @@
+grammar Src1;
+
+@header {
+    import java.util.*;
+}
+
+@members {
+    HashMap memory = new HashMap();
+    static int addr_index = 0;
+    static int gen_addr() {
+        return(addr_index++);
+    }
+}
+
 prog
     : block
     ;
 
 expr returns [int val]
-    : //fill this in
+    : e1 = var '+' e2 = var {$val = $e1.val + $e2.val;}
+    | e = var {$val = $e.val;}
     ;
 
 repeatStmt
-    : 'repeat' expr '{' block '}'
+    : 'repeat' num '{' block '}'
     ;
 
 block
@@ -25,9 +40,26 @@ printStmt
     ;
 
 exprList
-    : (expr ',')* expr
+    : (e1 = expr ',')* e2 = expr {System.out.println($e1.val+" "+$e2.val);}
     ;
 
 assignStmt
-    : 'let' ID '=' expr
+    : 'let' ID '=' expr {memory.put($ID.text, new Integer($expr.val));}
     ;
+
+var returns [int val]
+    : num {$val = $num.val;}
+    | ID {
+        Integer v = (Integer)memory.get($ID.text);
+        if (v != null) $val = v.intValue();
+        else System.err.println("Unknown variable " + $ID.text);
+    }
+    ;
+
+num returns [int val]
+    : NUM {$val = Integer.parseInt($NUM.text);}
+    ;
+
+ID  : ('a'..'z'|'A'..'Z')+;
+NUM : ('0'..'9')+;
+WS  : (' '|'\t'|'\n'|'\r')+ {skip();};
