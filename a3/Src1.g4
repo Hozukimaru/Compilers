@@ -8,7 +8,12 @@ grammar Src1;
     HashMap memory = new HashMap();
     static int addr_index = 0;
     static int gen_addr() {
-        return(addr_index++);
+        return(addr_index ++);
+    }
+
+    static int label_index = 0;
+    static int gen_label() {
+        return(label_index ++);
     }
 
     //Java byte code sheeeeit
@@ -24,17 +29,18 @@ grammar Src1;
         return "istore " + addr;
     }
     
-    static String iadd() {
-        return "iadd";
-    }
-    
-    static String imul() {
-        return "imul";
-    }
+    static String iadd() {return "iadd";}
+    static String isub() {return "isub";}
+    static String imul() {return "imul";}
     
     static String ldc(int x) {
         return "ldc " + x;
     }
+
+    static String iflt(int l) {return "iflt LABEL_"+l;}
+    static String ifeq(int l) {return "ifeq LABEL_"+l;}
+    static String go(int l) {return "goto LABEL_"+l;}
+    static String label(int l) {return "LABEL_"+l+":";}
 
     static HashMap<String, Integer> symbolTable 
         = new HashMap<String, Integer>();
@@ -77,42 +83,49 @@ grammar Src1;
 }
 
 prog
-    : block
+    : b=block {$b.code.gen();}
     ;
 
 expr returns [Code code, int val]
-    @init {$code = new Code();} 
+@init {$code = new Code();} 
     : e1 = var '+' e2 = var {$val = $e1.val + $e2.val;}
     | e = var {$val = $e.val;}
     ;
 
-repeatStmt
+repeatStmt returns [Code code]
+@init {$code = new Code();} 
     : 'repeat' num '{' block '}'
     ;
 
-block
+block returns [Code code]
+@init {$code = new Code();} 
     : stmt+
     ;
 
-stmt
-    : printStmt
-    | assignStmt
-    | repeatStmt
+stmt returns [Code code]
+@init {$code = new Code();} 
+    : printStmt {$code = $printStmt.code;}
+    | assignStmt {$code = $assignStmt.code;}
+    | repeatStmt {$code = $repeatStmt.code;}
     ;
 
-printStmt
-    : 'print' '(' exprList ')'
+printStmt returns [Code code]
+@init {$code = new Code();} 
+    : 'print' '(' exprList ')' {$code = $exprList.code;}
     ;
 
-exprList
+exprList returns [Code code]
+@init {$code = new Code();} 
     : (e1 = expr ',')* e2 = expr {System.out.println($e1.val+" "+$e2.val);}
     ;
 
-assignStmt
+assignStmt returns [Code code]
+@init {$code = new Code();} 
     : 'let' ID '=' expr {memory.put($ID.text, new Integer($expr.val));}
     ;
 
-var returns [int val]
+var returns [int val, Code code]
+@init {$code = new Code();} 
     : num {$val = $num.val;}
     | ID {
         Integer v = (Integer)memory.get($ID.text);
@@ -121,7 +134,8 @@ var returns [int val]
     }
     ;
 
-num returns [int val]
+num returns [int val, Code code]
+@init {$code = new Code();} 
     : NUM {$val = Integer.parseInt($NUM.text);}
     ;
 
