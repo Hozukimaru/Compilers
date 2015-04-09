@@ -5,18 +5,16 @@ grammar Src1;
 }
 
 @members {
-    HashMap memory = new HashMap();
     static int addr_index = 0;
-    static int gen_addr() {
-        return(addr_index ++);
+    static int gen_address() {
+        return (addr_index ++);
     }
-
     static int label_index = 0;
     static int gen_label() {
-        return(label_index ++);
+        return (label_index ++);
     }
 
-    //Java byte code sheeeeit
+    // a class for bytecode instructions
     static void echo(String message) {
         System.out.println(message);
     }
@@ -24,23 +22,26 @@ grammar Src1;
     static String iload(int addr) {
         return "iload " + addr;
     }
-    
     static String istore(int addr) {
         return "istore " + addr;
     }
-    
-    static String iadd() {return "iadd";}
-    static String isub() {return "isub";}
-    static String imul() {return "imul";}
-    
+    static String iadd() { return "iadd"; }
+    static String isub() { return "isub"; }
+    static String imul() {
+        return "imul";
+    }
     static String ldc(int x) {
         return "ldc " + x;
     }
+    static String iflt(int l) { return "iflt LABEL_" + l; }
+    static String ifeq(int l) { return "ifeq LABEL_" + l; }
+    static String go(int l) {
+        return "goto LABEL_" + l;
+    }
 
-    static String iflt(int l) {return "iflt LABEL_"+l;}
-    static String ifeq(int l) {return "ifeq LABEL_"+l;}
-    static String go(int l) {return "goto LABEL_"+l;}
-    static String label(int l) {return "LABEL_"+l+":";}
+    static String label(int l) {
+        return "LABEL_" + l + ":";
+    }
 
     static HashMap<String, Integer> symbolTable 
         = new HashMap<String, Integer>();
@@ -50,22 +51,19 @@ grammar Src1;
     static class Code {
         List<String> block;
         int addr;
-        
         public Code() {
             this.block = new ArrayList<String>();
         }
-        
         public void extend(List<String> block) {
             this.block.addAll(block);
         }
-        
         public void append(String... stmts) {
             for(String stmt : stmts)
                 this.block.add(stmt);
         }
 
         public void gen() {
-            echo(".class public Hello");
+            echo(".class public sample");
             echo(".super java/lang/Object");
             echo("");
             echo(".method public <init>()V");
@@ -78,67 +76,170 @@ grammar Src1;
             echo(".limit stack 10");
             echo(".limit locals 100");
             echo("");
+
+            for(String i : this.block) echo(i);
+            echo("return");
+            echo(".end method");
         }
     }
 }
 
-prog
-    : b=block {$b.code.gen();}
+
+prog : s=stmtList {$s.code.gen();}
     ;
 
-expr returns [Code code, int val]
-@init {$code = new Code();} 
-    : e1 = var '+' e2 = var {$val = $e1.val + $e2.val;}
-    | e = var {$val = $e.val;}
+expr returns [Code code]
+@init { $code = new Code(); }
+    : t=term '+' e=expr
+            {
+                int addr = gen_address();
+                $code.extend($t.code.block);
+                $code.extend($e.code.block);
+
+                $code.append(
+                    iload($t.code.addr),
+                    iload($e.code.addr),
+                    iadd(),
+                    istore(addr));
+                $code.addr = addr;
+            }
+    | t=term { $code = $t.code; }
     ;
 
-repeatStmt returns [Code code]
-@init {$code = new Code();} 
-    : 'repeat' num '{' block '}'
+term returns [Code code]
+@init { $code = new Code(); }
+    : f=factor '*' t=term
+        {
+            int addr = gen_address();
+            $code.extend($f.code.block);
+            $code.extend($t.code.block);
+            $code.append(
+                iload($f.code.addr),
+                iload($t.code.addr),
+                imul(),
+                istore(addr));
+            $code.addr = addr;
+        }
+    | f=factor {$code = $f.code;}
     ;
 
-block returns [Code code]
-@init {$code = new Code();} 
-    : stmt+
+factor returns [Code code]
+@init { $code = new Code(); }
+    :  expr
+        {
+            $code = $expr.code;
+        }
+    | NUM
+        {
+            int addr = gen_address();
+            $code.append(
+                ldc($NUM.int),
+                istore(addr));
+            $code.addr = addr;
+        }
+    | ID
+        {
+            String name = $ID.text;
+            if(symbolTable.containsKey(name))
+              $code.addr = symbolTable.get(name);
+            else {
+              int addr = gen_address();
+              $code.addr = addr;
+              $code.append(
+                  ldc(0),
+                  istore(addr));
+            }
+        }
+    ;
+    
+stmtList returns [Code code]
+@init {$code = new Code();}
+    : (s=stmt {$code.extend($s.code.block);} ',')* s=stmt {$code.extend($s.code.block);}
     ;
 
 stmt returns [Code code]
-@init {$code = new Code();} 
-    : printStmt {$code = $printStmt.code;}
-    | assignStmt {$code = $assignStmt.code;}
-    | repeatStmt {$code = $repeatStmt.code;}
+    : printStmt  { $code = $printStmt.code; }
+    | assignStmt  { $code = $assignStmt.code; }
+    | whileStmt {$code = $whileStmt.code;}
     ;
 
 printStmt returns [Code code]
-@init {$code = new Code();} 
-    : 'print' '(' exprList ')' {$code = $exprList.code;}
-    ;
-
-exprList returns [Code code]
-@init {$code = new Code();} 
-    : (e1 = expr ',')* e2 = expr {System.out.println($e1.val+" "+$e2.val);}
+@init { $code = new Code(); }
+    : 'print' '(' factor ')'
+            { $code.extend($factor.code.block);
+              $code.append(
+                "getstatic java/lang/System/out Ljava/io/PrintStream;",
+                iload($factor.code.addr),
+                "invokevirtual java/io/PrintStream/println(I)V");
+            }
     ;
 
 assignStmt returns [Code code]
-@init {$code = new Code();} 
-    : 'let' ID '=' expr {memory.put($ID.text, new Integer($expr.val));}
+@init {$code = new Code();}
+    : 'let' ID '=' expr
+        { int varAddr;
+          String varName = $ID.text;
+          if(symbolTable.containsKey(varName))
+            varAddr = symbolTable.get(varName);
+          else {
+            varAddr = gen_address();
+            symbolTable.put(varName, varAddr);
+          }
+
+          $code.extend($expr.code.block);
+          $code.append(
+            iload($expr.code.addr),
+            istore(varAddr));
+        }
     ;
 
-var returns [int val, Code code]
-@init {$code = new Code();} 
-    : num {$val = $num.val;}
-    | ID {
-        Integer v = (Integer)memory.get($ID.text);
-        if (v != null) $val = v.intValue();
-        else System.err.println("Unknown variable " + $ID.text);
-    }
+whileStmt returns [Code code]
+@init {$code = new Code();}
+    : 'while' '(' c=cond ')' '{'
+        s=stmtList
+       '}'
+       {
+            int beginLabel = gen_label();
+            int endLabel = gen_label();
+
+            $code.append(label(beginLabel));
+            $code.extend($c.code.block);
+            $code.append(
+                iload($c.code.addr),
+                ifeq(endLabel));
+            $code.extend($s.code.block);
+            $code.append(go(beginLabel));
+            $code.append(label(endLabel));
+       }
     ;
 
-num returns [int val, Code code]
-@init {$code = new Code();} 
-    : NUM {$val = Integer.parseInt($NUM.text);}
+cond returns [Code code]
+@init {$code = new Code();}
+    : e1=expr '<' e2=expr 
+        { 
+          int addr = gen_address();
+          int trueLabel = gen_label();
+          int endLabel = gen_label();
+
+          $code.extend($e1.code.block);
+          $code.extend($e2.code.block);
+          $code.append(
+            iload($e1.code.addr),
+            iload($e2.code.addr),
+            isub(),
+            iflt(trueLabel),
+            ldc(0),
+            istore(addr),
+            go(endLabel),
+            label(trueLabel),
+            ldc(1),
+            istore(addr),
+            label(endLabel));
+          $code.addr = addr;
+        }
     ;
 
-ID  : ('a'..'z'|'A'..'Z')+;
-NUM : ('0'..'9')+;
-WS  : (' '|'\t'|'\n'|'\r')+ {skip();};
+NUM : ('0' .. '9') + ;
+ID : ('a' .. 'z') +;
+WS : (' ' | '\t' | '\n' | '\r')+ { skip(); };
+
