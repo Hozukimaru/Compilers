@@ -85,12 +85,17 @@ grammar Src1;
 }
 
 
-prog : s=stmtList {$s.code.gen();}
+prog: block {$block.code.gen();}
+    ;
+
+block returns [Code code]
+@init { $code = new Code(); }
+    : stmt+ {$code = $stmt.code;}
     ;
 
 expr returns [Code code]
 @init { $code = new Code(); }
-    : t=term '+' e=expr
+    : t=var '+' e=var
             {
                 int addr = gen_address();
                 $code.extend($t.code.block);
@@ -103,24 +108,7 @@ expr returns [Code code]
                     istore(addr));
                 $code.addr = addr;
             }
-    | t=term { $code = $t.code; }
-    ;
-
-term returns [Code code]
-@init { $code = new Code(); }
-    : f=factor '*' t=term
-        {
-            int addr = gen_address();
-            $code.extend($f.code.block);
-            $code.extend($t.code.block);
-            $code.append(
-                iload($f.code.addr),
-                iload($t.code.addr),
-                imul(),
-                istore(addr));
-            $code.addr = addr;
-        }
-    | f=factor {$code = $f.code;}
+    | e=var { $code = $e.code; }
     ;
 
 factor returns [Code code]
@@ -152,24 +140,24 @@ factor returns [Code code]
         }
     ;
     
-stmtList returns [Code code]
+exprList returns [Code code]
 @init {$code = new Code();}
-    : (s=stmt {$code.extend($s.code.block);} ',')* s=stmt {$code.extend($s.code.block);}
+    : (e=expr {$code.extend($expr.code.block);} ',')* e=expr {$code.extend($e.code.block);}
     ;
 
 stmt returns [Code code]
     : printStmt  { $code = $printStmt.code; }
     | assignStmt  { $code = $assignStmt.code; }
-    | whileStmt {$code = $whileStmt.code;}
+    | repeatStmt {$code = $repeatStmt.code;}
     ;
 
 printStmt returns [Code code]
 @init { $code = new Code(); }
-    : 'print' '(' factor ')'
-            { $code.extend($factor.code.block);
+    : 'print' '(' exprList ')'
+            { $code.extend($exprList.code.block);
               $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
-                iload($factor.code.addr),
+                iload($exprList.code.addr),
                 "invokevirtual java/io/PrintStream/println(I)V");
             }
     ;
@@ -193,11 +181,26 @@ assignStmt returns [Code code]
         }
     ;
 
-whileStmt returns [Code code]
+val returns [Code code]
 @init {$code = new Code();}
-    : 'while' '(' c=cond ')' '{'
-        s=stmtList
-       '}'
+    : ID { 
+        int varAddr;
+        String varName = $ID.text;
+        if(symbolTable.containsKey(varName))
+            varAddr = symbolTable.get(varName);
+        else {
+            varAddr = gen_address();
+            symbolTable.put(varName, varAddr);
+        }
+
+        $code.append(iload($expr.code.addr),
+            istore(varAddr));
+        }
+    | NUM
+
+repeatStmt returns [Code code]
+@init {$code = new Code();}
+    : 'repeat' NUM '{' e=exprList '}'
        {
             int beginLabel = gen_label();
             int endLabel = gen_label();
@@ -207,7 +210,7 @@ whileStmt returns [Code code]
             $code.append(
                 iload($c.code.addr),
                 ifeq(endLabel));
-            $code.extend($s.code.block);
+            $code.extend($e.code.block);
             $code.append(go(beginLabel));
             $code.append(label(endLabel));
        }
