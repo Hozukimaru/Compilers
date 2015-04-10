@@ -88,11 +88,6 @@ grammar Src1;
 prog: block {$block.code.gen();}
     ;
 
-block returns [Code code]
-@init { $code = new Code(); }
-    : stmt+ {$code = $stmt.code;}
-    ;
-
 expr returns [Code code]
 @init { $code = new Code(); }
     : t=var '+' e=var
@@ -111,38 +106,27 @@ expr returns [Code code]
     | e=var { $code = $e.code; }
     ;
 
-factor returns [Code code]
-@init { $code = new Code(); }
-    :  expr
-        {
-            $code = $expr.code;
-        }
-    | NUM
-        {
-            int addr = gen_address();
-            $code.append(
-                ldc($NUM.int),
-                istore(addr));
-            $code.addr = addr;
-        }
-    | ID
-        {
-            String name = $ID.text;
-            if(symbolTable.containsKey(name))
-              $code.addr = symbolTable.get(name);
-            else {
-              int addr = gen_address();
-              $code.addr = addr;
-              $code.append(
-                  ldc(0),
-                  istore(addr));
-            }
-        }
-    ;
-    
-exprList returns [Code code]
+repeatStmt returns [Code code]
 @init {$code = new Code();}
-    : (e=expr {$code.extend($expr.code.block);} ',')* e=expr {$code.extend($e.code.block);}
+    : 'repeat' num '{' b=block '}'
+       /*{
+            int beginLabel = gen_label();
+            int endLabel = gen_label();
+
+            $code.append(label(beginLabel));
+            $code.extend($num.code.block);
+            $code.append(
+                iload($num.code.addr),
+                ifeq(endLabel));
+            $code.extend($b.code.block);
+            $code.append(go(beginLabel));
+            $code.append(label(endLabel));
+       }*/
+    ;
+
+block returns [Code code]
+@init { $code = new Code(); }
+    : (stmt {$code.extend($stmt.code.block);})+
     ;
 
 stmt returns [Code code]
@@ -153,13 +137,24 @@ stmt returns [Code code]
 
 printStmt returns [Code code]
 @init { $code = new Code(); }
-    : 'print' '(' exprList ')'
-            { $code.extend($exprList.code.block);
+    : 'print' '(' e1=expr ',' e2=expr ')'
+            { $code.extend($e1.code.block);
               $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
-                iload($exprList.code.addr),
+                iload($e1.code.addr),
+                "invokevirtual java/io/PrintStream/println(I)V");
+            
+            $code.extend($e2.code.block);
+              $code.append(
+                "getstatic java/lang/System/out Ljava/io/PrintStream;",
+                iload($e2.code.addr),
                 "invokevirtual java/io/PrintStream/println(I)V");
             }
+    ;
+    
+exprList returns [Code code]
+@init {$code = new Code();}
+    : (e=expr {$code.extend($expr.code.block);} ',')* e=expr {$code.extend($e.code.block);}
     ;
 
 assignStmt returns [Code code]
@@ -181,7 +176,7 @@ assignStmt returns [Code code]
         }
     ;
 
-val returns [Code code]
+var returns [Code code]
 @init {$code = new Code();}
     : ID { 
         int varAddr;
@@ -193,27 +188,8 @@ val returns [Code code]
             symbolTable.put(varName, varAddr);
         }
 
-        $code.append(iload($expr.code.addr),
-            istore(varAddr));
         }
-    | NUM
-
-repeatStmt returns [Code code]
-@init {$code = new Code();}
-    : 'repeat' NUM '{' e=exprList '}'
-       {
-            int beginLabel = gen_label();
-            int endLabel = gen_label();
-
-            $code.append(label(beginLabel));
-            $code.extend($c.code.block);
-            $code.append(
-                iload($c.code.addr),
-                ifeq(endLabel));
-            $code.extend($e.code.block);
-            $code.append(go(beginLabel));
-            $code.append(label(endLabel));
-       }
+    | num {$code = $num.code;}
     ;
 
 cond returns [Code code]
@@ -242,7 +218,15 @@ cond returns [Code code]
         }
     ;
 
+num returns [Code code]
+@init {$code = new Code();}    
+    : NUM {
+        int addr = gen_address();
+        $code.append(ldc($NUM.int), istore(addr));
+        $code.addr = addr;
+        }
+    ;
+
 NUM : ('0' .. '9') + ;
 ID : ('a' .. 'z') +;
 WS : (' ' | '\t' | '\n' | '\r')+ { skip(); };
-
