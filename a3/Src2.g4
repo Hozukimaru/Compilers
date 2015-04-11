@@ -1,4 +1,4 @@
-grammar Src1;
+grammar Src2;
 
 @header {
     import java.util.*;
@@ -63,7 +63,7 @@ grammar Src1;
         }
 
         public void gen() {
-            echo(".class public sample");
+            echo(".class public sample2");
             echo(".super java/lang/Object");
             echo("");
             echo(".method public <init>()V");
@@ -132,7 +132,8 @@ block returns [Code code]
 stmt returns [Code code]
     : printStmt  { $code = $printStmt.code; }
     | assignStmt  { $code = $assignStmt.code; }
-    | repeatStmt {$code = $repeatStmt.code;}
+    | repeatStmt { $code = $repeatStmt.code; }
+    | whileStmt { $code = $whileStmt.code; }
     ;
 
 printStmt returns [Code code]
@@ -179,13 +180,15 @@ assignStmt returns [Code code]
 var returns [Code code]
 @init {$code = new Code();}
     : ID { 
-        int varAddr;
         String varName = $ID.text;
         if(symbolTable.containsKey(varName))
-            varAddr = symbolTable.get(varName);
+            $code.addr = symbolTable.get(varName);
         else {
-            varAddr = gen_address();
-            symbolTable.put(varName, varAddr);
+            int varAddr = gen_address();
+            $code.addr = varAddr;
+            $code.append(
+                ldc(0),
+                istore(varAddr));
         }
 
         }
@@ -194,11 +197,74 @@ var returns [Code code]
 
 num returns [Code code]
 @init {$code = new Code();}    
-    : NUM {
-        int addr = gen_address();
-        $code.append(ldc($NUM.int), istore(addr));
-        $code.addr = addr;
+    : NUM 
+        {
+            int addr = gen_address();
+            $code.append(
+                ldc($NUM.int), 
+                istore(addr));
+            $code.addr = addr;
         }
+    ;
+
+whileStmt returns  [Code code]
+@init {$code = new Code();}    
+    : 'while' '(' boolExpr ')' '{' block '}'
+        {
+            int beginLabel = gen_label();
+            int endLabel = gen_label();
+
+            $code.append(label(beginLabel));
+            $code.extend($boolExpr.code.block);
+            $code.append(
+                iload($boolExpr.code.addr),
+                ifeq(endLabel));
+            $code.extend($block.code.block);
+            $code.append(go(beginLabel));
+            $code.append(label(endLabel));
+        }
+    ;
+
+boolExpr returns [Code code]
+@init {$code = new Code();}
+    : e1=expr REL e2=expr
+    //need to get this to work for all REL types!        
+        {
+            int addr = gen_address();
+            int trueLabel = gen_label();
+            int endLabel = gen_label();
+
+            $code.extend($e1.code.block);
+            $code.extend($e2.code.block);
+            $code.append(
+                iload($e1.code.addr),
+                iload($e2.code.addr),
+                isub(),
+                iflt(trueLabel),
+                ldc(0),
+                istore(addr),
+                go(endLabel),
+                label(trueLabel),
+                ldc(1),
+                istore(addr),
+                label(endLabel));
+            $code.addr = addr;
+        }
+    | b1=boolExpr LOGIC b2=boolExpr
+    | NEG b=boolExpr
+    ;
+
+REL : '=='
+    | '<'
+    | '>'
+    ;
+
+LOGIC
+    : 'and'
+    | 'or'
+    ;
+
+NEG : 'not'
     ;
 
 NUM : ('0' .. '9') + ;
