@@ -54,9 +54,11 @@ grammar Src2;
         public Code() {
             this.block = new ArrayList<String>();
         }
+        
         public void extend(List<String> block) {
             this.block.addAll(block);
         }
+        
         public void append(String... stmts) {
             for(String stmt : stmts)
                 this.block.add(stmt);
@@ -91,18 +93,44 @@ prog: block {$block.code.gen();}
 expr returns [Code code]
 @init { $code = new Code(); }
     : t=var '+' e=var
-            {
-                int addr = gen_address();
-                $code.extend($t.code.block);
-                $code.extend($e.code.block);
+        {
+            int addr = gen_address();
+            $code.extend($t.code.block);
+            $code.extend($e.code.block);
 
-                $code.append(
-                    iload($t.code.addr),
-                    iload($e.code.addr),
-                    iadd(),
-                    istore(addr));
-                $code.addr = addr;
-            }
+            $code.append(
+                iload($t.code.addr),
+                iload($e.code.addr),
+                iadd(),
+                istore(addr));
+            $code.addr = addr;
+        }
+    | t=var '-' e=var
+        {
+            int addr = gen_address();
+            $code.extend($t.code.block);
+            $code.extend($e.code.block);
+
+            $code.append(
+                iload($t.code.addr),
+                iload($e.code.addr),
+                isub(),
+                istore(addr));
+            $code.addr = addr;
+        }
+    | t=var '*' e=var
+        {
+            int addr = gen_address();
+            $code.extend($t.code.block);
+            $code.extend($e.code.block);
+
+            $code.append(
+                iload($t.code.addr),
+                iload($e.code.addr),
+                imul(),
+                istore(addr));
+            $code.addr = addr;
+        }
     | e=var { $code = $e.code; }
     ;
 
@@ -139,57 +167,61 @@ stmt returns [Code code]
 printStmt returns [Code code]
 @init { $code = new Code(); }
     : 'print' '(' e1=expr ',' e2=expr ')'
-            { $code.extend($e1.code.block);
-              $code.append(
+        { 
+            $code.extend($e1.code.block);
+            $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
                 iload($e1.code.addr),
                 "invokevirtual java/io/PrintStream/println(I)V");
             
             $code.extend($e2.code.block);
-              $code.append(
+            $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
                 iload($e2.code.addr),
                 "invokevirtual java/io/PrintStream/println(I)V");
-            }
+        }
     ;
     
 exprList returns [Code code]
 @init {$code = new Code();}
-    : (e=expr {$code.extend($expr.code.block);} ',')* e=expr {$code.extend($e.code.block);}
+    : (e=expr {$code.extend($expr.code.block);} ',')* e=expr 
+        {$code.extend($e.code.block);}
     ;
 
 assignStmt returns [Code code]
 @init {$code = new Code();}
     : 'let' ID '=' expr
-        { int varAddr;
-          String varName = $ID.text;
-          if(symbolTable.containsKey(varName))
-            varAddr = symbolTable.get(varName);
-          else {
-            varAddr = gen_address();
-            symbolTable.put(varName, varAddr);
-          }
+        { 
+            int varAddr;
+            String varName = $ID.text;
+            if(symbolTable.containsKey(varName))
+                varAddr = symbolTable.get(varName);
+            else {
+                varAddr = gen_address();
+                symbolTable.put(varName, varAddr);
+            }
 
-          $code.extend($expr.code.block);
-          $code.append(
-            iload($expr.code.addr),
-            istore(varAddr));
+            $code.extend($expr.code.block);
+            $code.append(
+                iload($expr.code.addr),
+                istore(varAddr));
         }
     ;
 
 var returns [Code code]
 @init {$code = new Code();}
-    : ID { 
-        String varName = $ID.text;
-        if(symbolTable.containsKey(varName))
-            $code.addr = symbolTable.get(varName);
-        else {
-            int varAddr = gen_address();
-            $code.addr = varAddr;
-            $code.append(
-                ldc(0),
-                istore(varAddr));
-        }
+    : ID 
+        { 
+            String varName = $ID.text;
+            if(symbolTable.containsKey(varName))
+                $code.addr = symbolTable.get(varName);
+            else {
+                int varAddr = gen_address();
+                $code.addr = varAddr;
+                $code.append(
+                    ldc(0),
+                    istore(varAddr));
+            }
 
         }
     | num {$code = $num.code;}
@@ -227,20 +259,21 @@ whileStmt returns  [Code code]
 
 boolExpr returns [Code code]
 @init {$code = new Code();}
-    : e1=expr REL e2=expr
-    //need to get this to work for all REL types!        
+    : e1=expr rel e2=expr
         {
             int addr = gen_address();
             int trueLabel = gen_label();
             int endLabel = gen_label();
 
+            String cond = $rel.text + " LABEL_" + trueLabel;
+            
             $code.extend($e1.code.block);
             $code.extend($e2.code.block);
             $code.append(
                 iload($e1.code.addr),
                 iload($e2.code.addr),
                 isub(),
-                iflt(trueLabel),
+                cond,
                 ldc(0),
                 istore(addr),
                 go(endLabel),
@@ -254,9 +287,10 @@ boolExpr returns [Code code]
     | NEG b=boolExpr
     ;
 
-REL : '=='
-    | '<'
-    | '>'
+rel returns [String text]
+    : '==' {$text = "ifeq";}
+    | '<' {$text = "iflt";}
+    | '>' {$text = "ifgt";}
     ;
 
 LOGIC
