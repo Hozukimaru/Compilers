@@ -61,8 +61,8 @@ istore 10
 iload 10
 istore 1
 iinc 11 1
-iload 12
 iload 11
+iload 12
 if_icmplt LABEL_0
 return
 .end method

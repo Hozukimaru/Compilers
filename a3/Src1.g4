@@ -161,8 +161,8 @@ repeatStmt returns [Code code]
             $code.append(iinc(loop_addr, 1));
 
             $code.append(
-                iload(max_addr),
                 iload(loop_addr),
+                iload(max_addr),
                 if_icmplt(beginLabel));
        }
     ;
