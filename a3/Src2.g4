@@ -39,6 +39,14 @@ grammar Src2;
         return "goto LABEL_" + l;
     }
 
+    static String if_icmplt(int l) {
+        return "if_icmplt LABEL_" + l;
+    }
+
+    static String iinc(int a, int b) {
+        return "iinc " + a + " " + b;
+    }
+    
     static String label(int l) {
         return "LABEL_" + l + ":";
     }
@@ -136,20 +144,28 @@ expr returns [Code code]
 
 repeatStmt returns [Code code]
 @init {$code = new Code();}
-    : 'repeat' num '{' b=block '}'
-       /*{
+    : 'repeat' NUM '{' b=block '}'
+        {
             int beginLabel = gen_label();
-            int endLabel = gen_label();
+            int loop_addr = gen_address();
+            int max_addr = gen_address();
+
+            $code.append(
+                ldc($NUM.int),
+                istore(max_addr),
+                ldc(0),
+                istore(loop_addr));
 
             $code.append(label(beginLabel));
-            $code.extend($num.code.block);
-            $code.append(
-                iload($num.code.addr),
-                ifeq(endLabel));
             $code.extend($b.code.block);
-            $code.append(go(beginLabel));
-            $code.append(label(endLabel));
-       }*/
+
+            $code.append(iinc(loop_addr, 1));
+
+            $code.append(
+                iload(loop_addr),
+                iload(max_addr),
+                if_icmplt(beginLabel));
+        }
     ;
 
 block returns [Code code]
@@ -158,22 +174,25 @@ block returns [Code code]
     ;
 
 stmt returns [Code code]
-    : printStmt  { $code = $printStmt.code; }
+    : printStmt   { $code = $printStmt.code; }
     | assignStmt  { $code = $assignStmt.code; }
-    | repeatStmt { $code = $repeatStmt.code; }
-    | whileStmt { $code = $whileStmt.code; }
+    | repeatStmt  { $code = $repeatStmt.code; }
+    | whileStmt   { $code = $whileStmt.code; }
+    | boolExpr    { $code = $boolExpr.code; }
     ;
 
 printStmt returns [Code code]
 @init { $code = new Code(); }
-    : 'print' '(' e1=expr ',' e2=expr ')'
-        { 
+    : 'print' '(' (e1=expr ','
+           {
             $code.extend($e1.code.block);
             $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
                 iload($e1.code.addr),
                 "invokevirtual java/io/PrintStream/println(I)V");
             
+           } )* e2=expr ')'
+        { 
             $code.extend($e2.code.block);
             $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
@@ -184,7 +203,7 @@ printStmt returns [Code code]
     
 exprList returns [Code code]
 @init {$code = new Code();}
-    : (e=expr {$code.extend($expr.code.block);} ',')* e=expr 
+    : (e=expr {$code.extend($e.code.block);} ',')* e=expr 
         {$code.extend($e.code.block);}
     ;
 
@@ -283,8 +302,27 @@ boolExpr returns [Code code]
                 label(endLabel));
             $code.addr = addr;
         }
-    | b1=boolExpr LOGIC b2=boolExpr
+    | b1=boolExpr logic b2=boolExpr
+        {
+            int addr = gen_address();
+            String log = $logic.text;
+            $code.append(
+                iload($b1.code.addr),
+                iload($b2.code.addr),
+                log,
+                istore(addr));
+            $code.addr = addr;
+        }
     | NEG b=boolExpr
+        {
+            int addr = gen_address();
+            $code.append(
+                iload($b.code.addr),
+                "ineg",
+                istore(addr));
+            $code.addr = addr;
+                
+        }
     ;
 
 rel returns [String text]
@@ -293,9 +331,9 @@ rel returns [String text]
     | '>' {$text = "ifgt";}
     ;
 
-LOGIC
-    : 'and'
-    | 'or'
+logic returns [String text]
+    : 'and' {$text = "iand";}
+    | 'or' {$text = "ior";}
     ;
 
 NEG : 'not'

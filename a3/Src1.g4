@@ -145,7 +145,6 @@ repeatStmt returns [Code code]
     : 'repeat' NUM '{' b=block '}'
        {
             int beginLabel = gen_label();
-            int endLabel = gen_label();
             int loop_addr = gen_address();
             int max_addr = gen_address();
 
@@ -180,14 +179,15 @@ stmt returns [Code code]
 
 printStmt returns [Code code]
 @init { $code = new Code(); }
-    : 'print' '(' e1=expr ',' e2=expr ')'
-        { 
+    : 'print' '(' (e1=expr ','
+        {
             $code.extend($e1.code.block);
             $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
                 iload($e1.code.addr),
                 "invokevirtual java/io/PrintStream/println(I)V");
-            
+        } )* e2=expr ')'
+        { 
             $code.extend($e2.code.block);
             $code.append(
                 "getstatic java/lang/System/out Ljava/io/PrintStream;",
@@ -198,7 +198,7 @@ printStmt returns [Code code]
     
 exprList returns [Code code]
 @init {$code = new Code();}
-    : (e=expr {$code.extend($expr.code.block);} ',')* e=expr 
+    : (e=expr {$code.extend($e.code.block);} ',')* e=expr 
         {$code.extend($e.code.block);}
     ;
 
